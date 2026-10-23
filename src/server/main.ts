@@ -14,7 +14,7 @@ const notesDir = path.resolve(root, process.env.NOTES_DIR || 'notes');
 const app = createApp({
   notesDir,
   publicDir: path.join(root, 'public'),
-  jsDir: path.join(root, 'dist/src')
+  jsDir: path.join(root, 'dist/public/js')
 });
 
 app.server.listen(port, host, () => {

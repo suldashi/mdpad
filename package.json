@@ -9,13 +9,15 @@
     "node": ">=22"
   },
   "scripts": {
-    "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json",
+    "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json && tsc -p tsconfig.client.json && esbuild src/client/main.ts --bundle --format=esm --target=es2022 --minify --sourcemap --outdir=dist/public/js/client",
     "start": "node dist/src/server/main.js",
     "test": "npm run build && node --test \"dist/test/**/*.test.js\"",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json"
   },
   "devDependencies": {
+    "@milkdown/kit": "^7.22.3",
     "@types/node": "^22.20.5",
+    "esbuild": "^0.28.2",
     "typescript": "^7.0.2"
   }
 }

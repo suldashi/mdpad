@@ -64,6 +64,8 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
   background: var(--surface);
   border-right: 1px solid transparent;
   transition: width 0.18s ease, border-color 0.18s ease;
+  display: flex;
+  flex-direction: column;
 }
 
 .sidebar-open #sidebar {
@@ -71,12 +73,19 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
   border-right-color: var(--border);
 }
 
-#note-list {
+#sidebar-head {
+  flex: none;
   width: var(--sidebar-w);
-  height: 100%;
+  padding: calc(env(safe-area-inset-top) + 8px) 8px 4px calc(env(safe-area-inset-left) + 8px);
+}
+
+#note-list {
+  flex: 1;
+  min-height: 0;
+  width: var(--sidebar-w);
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: calc(env(safe-area-inset-top) + 10px) 8px calc(env(safe-area-inset-bottom) + 16px) calc(env(safe-area-inset-left) + 8px);
+  padding: 4px 8px calc(env(safe-area-inset-bottom) + 16px) calc(env(safe-area-inset-left) + 8px);
 }
 
 #scrim { display: none; }
@@ -91,20 +100,51 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 
 /* ------------------------------------------------------------- note list */
 
+.new-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 0.95rem;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.new-note:hover { background: color-mix(in srgb, var(--text) 6%, transparent); }
+
+.note-item {
+  display: flex;
+  align-items: center;
+  border-radius: 8px;
+}
+
+.note-item:hover { background: color-mix(in srgb, var(--text) 6%, transparent); }
+
+.note-item.active { background: var(--accent-soft); }
+
 .note-link {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 9px 12px;
-  border-radius: 8px;
+  padding: 9px 4px 9px 12px;
   color: inherit;
   text-decoration: none;
   -webkit-tap-highlight-color: transparent;
 }
 
-.note-link:hover { background: color-mix(in srgb, var(--text) 6%, transparent); }
+.note-delete { flex: none; margin-right: 4px; opacity: 0; }
 
-.note-link.active { background: var(--accent-soft); }
+.note-item:hover .note-delete, .note-item.active .note-delete, .note-delete:focus-visible { opacity: 1; }
+
+.note-delete:hover { color: var(--danger); }
 
 .note-title {
   font-size: 0.95rem;
@@ -153,7 +193,6 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 
 .text-button[aria-pressed="true"] { color: var(--accent); }
 
-#delete-note:hover { color: var(--danger); }
 
 .text-button .label { font-size: 0.9rem; }
 
@@ -182,7 +221,7 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
   white-space: nowrap;
 }
 
-.no-note #toggle-preview, .no-note #delete-note, .no-note #page, .no-note #status { visibility: hidden; }
+.no-note #toggle-raw, .no-note #page, .no-note #status { visibility: hidden; }
 
 /* ------------------------------------------------------------- page */
 
@@ -210,15 +249,16 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 
 #title::placeholder { color: var(--muted); opacity: 0.6; }
 
-#editor, #preview {
+#editor, #raw {
   flex: 1;
   min-height: 0;
   width: 100%;
   overflow-y: auto;
-  padding: 12px var(--gutter) calc(40vh + env(safe-area-inset-bottom));
 }
 
-#editor {
+.loading #editor, .loading #raw { opacity: 0.6; }
+
+#raw {
   display: block;
   resize: none;
   border: 0;
@@ -228,11 +268,75 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
   font: 1rem/1.7 var(--mono);
   tab-size: 4;
   caret-color: var(--accent);
+  padding: 12px var(--gutter) calc(40vh + env(safe-area-inset-bottom));
 }
 
-#editor::placeholder { color: var(--muted); opacity: 0.7; }
+#raw::placeholder { color: var(--muted); opacity: 0.7; }
 
-#editor[readonly] { opacity: 0.6; }
+/* ------------------------------------------------------------- formatted editor */
+
+#editor .milkdown { min-height: 100%; }
+
+#editor .ProseMirror {
+  min-height: 100%;
+  outline: 0;
+  padding: 12px var(--gutter) calc(40vh + env(safe-area-inset-bottom));
+  font: 1.02rem/1.7 var(--font);
+  color: var(--text);
+  caret-color: var(--accent);
+  overflow-wrap: anywhere;
+}
+
+#editor .ProseMirror > p:only-child:has(> br:only-child)::before {
+  content: "Start writing…";
+  position: absolute;
+  color: var(--muted);
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+#editor .ProseMirror > :first-child { margin-top: 0; }
+#editor .ProseMirror p { margin: 0 0 0.75em; }
+#editor .ProseMirror h1, #editor .ProseMirror h2, #editor .ProseMirror h3,
+#editor .ProseMirror h4, #editor .ProseMirror h5, #editor .ProseMirror h6 { line-height: 1.3; margin: 1.2em 0 0.4em; }
+#editor .ProseMirror h1 { font-size: 1.7em; }
+#editor .ProseMirror h2 { font-size: 1.4em; }
+#editor .ProseMirror h3 { font-size: 1.18em; }
+#editor .ProseMirror h4, #editor .ProseMirror h5, #editor .ProseMirror h6 { font-size: 1em; }
+#editor .ProseMirror ul, #editor .ProseMirror ol { margin: 0 0 0.75em; padding-left: 1.6em; }
+#editor .ProseMirror li > p { margin: 0; }
+#editor .ProseMirror li > ul, #editor .ProseMirror li > ol { margin-bottom: 0; }
+#editor .ProseMirror li[data-item-type="task"] { list-style: none; position: relative; }
+#editor .ProseMirror li[data-item-type="task"]::before {
+  content: "";
+  position: absolute;
+  left: -1.5em;
+  top: 0.32em;
+  width: 1em;
+  height: 1em;
+  border: 1.5px solid var(--muted);
+  border-radius: 4px;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+#editor .ProseMirror li[data-item-type="task"][data-checked="true"]::before {
+  background: var(--accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8.5l3 3 6-7' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 100% no-repeat;
+  border-color: var(--accent);
+}
+#editor .ProseMirror li[data-item-type="task"][data-checked="true"] > p { color: var(--muted); text-decoration: line-through; }
+#editor .ProseMirror a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+#editor .ProseMirror code { font-family: var(--mono); font-size: 0.88em; background: var(--code-bg); padding: 0.15em 0.35em; border-radius: 4px; }
+#editor .ProseMirror pre { background: var(--code-bg); padding: 12px 14px; border-radius: 8px; overflow-x: auto; line-height: 1.5; margin: 0 0 0.75em; }
+#editor .ProseMirror pre code { background: none; padding: 0; font-size: 0.86em; }
+#editor .ProseMirror blockquote { margin: 0 0 0.75em; padding-left: 1em; border-left: 3px solid var(--border); color: var(--muted); }
+#editor .ProseMirror hr { border: 0; border-top: 1px solid var(--border); margin: 1.5em 0; }
+#editor .ProseMirror img { max-width: 100%; height: auto; border-radius: 6px; }
+#editor .ProseMirror table { border-collapse: collapse; margin: 0 0 0.75em; }
+#editor .ProseMirror th, #editor .ProseMirror td { border: 1px solid var(--border); padding: 6px 12px; vertical-align: top; }
+#editor .ProseMirror th { background: var(--surface); }
+#editor .ProseMirror th p, #editor .ProseMirror td p { margin: 0; }
+#editor .ProseMirror del { color: var(--muted); }
+#editor .ProseMirror .ProseMirror-selectednode { outline: 2px solid var(--accent); }
 
 /* ------------------------------------------------------------- empty */
 
@@ -274,31 +378,6 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
   z-index: 30;
 }
 
-/* ------------------------------------------------------------- markdown */
-
-.markdown { font-size: 1.02rem; line-height: 1.7; overflow-wrap: break-word; }
-.markdown > :first-child { margin-top: 0; }
-.markdown h1, .markdown h2, .markdown h3, .markdown h4, .markdown h5, .markdown h6 { line-height: 1.3; margin: 1.6em 0 0.5em; }
-.markdown h1 { font-size: 1.7em; }
-.markdown h2 { font-size: 1.4em; padding-bottom: 0.2em; border-bottom: 1px solid var(--border); }
-.markdown h3 { font-size: 1.18em; }
-.markdown h4, .markdown h5, .markdown h6 { font-size: 1em; }
-.markdown p, .markdown ul, .markdown ol, .markdown blockquote, .markdown pre, .markdown table { margin: 0 0 1em; }
-.markdown ul, .markdown ol { padding-left: 1.6em; }
-.markdown li > ul, .markdown li > ol { margin-bottom: 0; }
-.markdown li.task { list-style: none; margin-left: -1.4em; }
-.markdown li.task input { margin: 0 0.4em 0 0; vertical-align: -0.1em; }
-.markdown a { color: var(--accent); }
-.markdown code { font-family: var(--mono); font-size: 0.88em; background: var(--code-bg); padding: 0.15em 0.35em; border-radius: 4px; }
-.markdown pre { background: var(--code-bg); padding: 12px 14px; border-radius: 8px; overflow-x: auto; line-height: 1.5; }
-.markdown pre code { background: none; padding: 0; font-size: 0.86em; }
-.markdown blockquote { margin-left: 0; padding: 0 0 0 1em; border-left: 3px solid var(--border); color: var(--muted); }
-.markdown hr { border: 0; border-top: 1px solid var(--border); margin: 2em 0; }
-.markdown img { max-width: 100%; height: auto; border-radius: 6px; }
-.markdown table { border-collapse: collapse; display: block; overflow-x: auto; max-width: 100%; }
-.markdown th, .markdown td { border: 1px solid var(--border); padding: 6px 12px; }
-.markdown th { background: var(--surface); }
-
 /* ------------------------------------------------------------- phones */
 
 @media (max-width: 760px) {
@@ -321,9 +400,9 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
     box-shadow: 0 0 40px rgb(0 0 0 / 0.25);
   }
 
-  #note-list { width: 100%; }
+  #note-list, #sidebar-head { width: 100%; }
 
-  .note-link { padding: 12px 14px; }
+  .note-link { padding: 12px 4px 12px 14px; }
 
   #scrim {
     display: block;
@@ -346,7 +425,7 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
   #title { font-size: 1.5rem; padding-top: 10px; }
 
   /* 16px or more keeps iOS from zooming into the field. */
-  #editor { font-size: 16px; line-height: 1.6; }
+  #raw, #editor .ProseMirror { font-size: 16px; line-height: 1.6; }
   #page { --gutter: calc(16px + env(safe-area-inset-left)); }
 }
 
