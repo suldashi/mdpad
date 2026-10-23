@@ -5,6 +5,10 @@
 //
 // A file's name is its original name plus a hash of its contents: the same
 // file added twice is stored once, and a name never points to new contents.
+//
+// Files that no note links to are deleted once they have gone unlinked for
+// a grace period (a day by default), which leaves time for undo, cut and
+// paste, and restoring a note from elsewhere.
 
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
@@ -65,10 +69,67 @@ export function cleanFileName(input: string): { base: string; ext: string } {
 export class Attachments {
   readonly dir: string;
   readonly maxSize: number;
+  readonly grace: number;
+  // When each file was first seen with no note linking to it. Kept in
+  // memory only, so a restart starts the wait again, which errs on the safe
+  // side.
+  private unlinkedSince = new Map<string, number>();
 
-  constructor(notesDir: string, maxSize: number) {
+  constructor(notesDir: string, maxSize: number, grace: number) {
     this.dir = path.join(path.resolve(notesDir), FOLDER);
     this.maxSize = maxSize;
+    this.grace = grace;
+  }
+
+  // Deletes files that no note has linked to for the grace period, given the
+  // text of every note. Returns the names of the deleted files.
+  async sweep(notes: string[], now = Date.now()): Promise<string[]> {
+    if (this.grace <= 0) return [];
+    let names: string[];
+    try {
+      names = await fsp.readdir(this.dir);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
+      throw err;
+    }
+    const text = notes.join('\n');
+    const deleted: string[] = [];
+    const seen = new Set<string>();
+    for (const name of names) {
+      const file = path.join(this.dir, name);
+      let stat;
+      try {
+        stat = await fsp.stat(file);
+      } catch {
+        continue; // removed meanwhile
+      }
+      if (!stat.isFile()) continue;
+      const old = now - stat.mtimeMs >= this.grace;
+      // Leftovers from uploads cut short by a crash.
+      if (name.startsWith('.upload-') && name.endsWith('.tmp')) {
+        if (old) await fsp.rm(file, { force: true });
+        continue;
+      }
+      if (name.startsWith('.')) continue;
+      seen.add(name);
+      // A name is linked if a note mentions it, written plainly or
+      // URL-encoded. A fresh upload counts as linked, so its link has time
+      // to arrive.
+      if (!old || text.includes(name) || text.includes(encodeURI(name))) {
+        this.unlinkedSince.delete(name);
+        continue;
+      }
+      const since = this.unlinkedSince.get(name);
+      if (since === undefined) {
+        this.unlinkedSince.set(name, now);
+      } else if (now - since >= this.grace) {
+        await fsp.rm(file, { force: true });
+        this.unlinkedSince.delete(name);
+        deleted.push(name);
+      }
+    }
+    for (const name of this.unlinkedSince.keys()) if (!seen.has(name)) this.unlinkedSince.delete(name);
+    return deleted;
   }
 
   async save(name: string, body: NodeJS.ReadableStream): Promise<Attachment> {

@@ -34,6 +34,7 @@ Set these as environment variables:
 | `HOST`      | `127.0.0.1` | Address to listen on. Use `0.0.0.0` to reach it from other devices, such as your phone on the same network. |
 | `NOTES_DIR` | `notes`     | Folder for the `.md` files, relative to the project folder or absolute.     |
 | `MAX_UPLOAD_MB` | `25`    | Largest file that can be attached to a note, in megabytes.                   |
+| `ATTACHMENT_GRACE_HOURS` | `24` | How long an attached file may go unlinked before it is deleted. `0` never deletes attachments. |
 
 For example: `HOST=0.0.0.0 PORT=8080 NOTES_DIR=/srv/notes npm start`
 
@@ -61,7 +62,7 @@ location / {
 - **Raw mode:** the **Raw** button (or Ctrl+E) switches to a plain text editor with the Markdown source, and back. Each page load starts in formatted mode.
 - **Images and files:** paste or drop them into a note, or pick them with the 📎 button (on a phone, that's how you add photos). They're saved in `attachments/` inside the notes folder, and the note links to them with a relative path, such as `![photo](attachments/photo-1a2b3c4d5e.png)`. Images show inline; other files are links (Ctrl/Cmd-click to open). Because the paths are relative, the notes folder also works as is in other Markdown apps, like Obsidian or VS Code.
   - A file's name gets a short hash of its contents, so the same file added twice is stored once.
-  - Deleting a link or a note leaves the file in place, since other notes may use it. Clean up `attachments/` by hand if you need the space.
+  - Files that no note links to anymore are deleted automatically once they've gone unlinked for 24 hours (checked hourly). Until then, undo, cut and paste, or restoring a deleted note brings them back. Several notes can link the same file; it stays as long as any of them does.
   - HTML and other files a browser could run are served as downloads, not shown.
 - **Undo/redo:** Ctrl+Z, Ctrl+Shift+Z or Ctrl+Y. Undo only takes back your own edits, not other people's.
 - **Lists:** pressing Enter in a list item starts the next item; pressing it on an empty item ends the list.

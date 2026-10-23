@@ -396,3 +396,32 @@ test('attachment names are made safe for links', () => {
   assert.deepEqual(cleanFileName('Ünïcödé café.JPG'), { base: 'Ünïcödé-café', ext: 'jpg' });
   assert.deepEqual(cleanFileName('(((.pdf'), { base: 'file', ext: 'pdf' });
 });
+
+test('attachments no note links to are deleted after the grace period', async () => {
+  const { app, base, dir } = await startApp();
+  try {
+    const linked: any = await (await upload(base, 'kept.png', 'kept')).json();
+    const unlinked: any = await (await upload(base, 'gone.png', 'gone')).json();
+    const keptName = linked.url.slice('attachments/'.length);
+    const goneName = unlinked.url.slice('attachments/'.length);
+    fs.writeFileSync(path.join(dir, 'Pics.md'), `![kept](${linked.url})\n`);
+    fs.writeFileSync(path.join(dir, 'attachments', '.upload-old.tmp'), 'x');
+    const day = 24 * 3600 * 1000;
+    const notes = [fs.readFileSync(path.join(dir, 'Pics.md'), 'utf8')];
+    const files = () => fs.readdirSync(path.join(dir, 'attachments')).sort();
+
+    // Fresh uploads are left alone, linked or not.
+    assert.deepEqual(await app.attachments.sweep(notes), []);
+    // Old enough: the unlinked file starts its wait, and the crash leftover goes.
+    assert.deepEqual(await app.attachments.sweep(notes, Date.now() + day), []);
+    assert.deepEqual(files(), [goneName, keptName].sort());
+    // Linked again in the meantime: the wait starts over.
+    assert.deepEqual(await app.attachments.sweep([...notes, unlinked.url], Date.now() + 1.5 * day), []);
+    assert.deepEqual(await app.attachments.sweep(notes, Date.now() + 2 * day), []);
+    // Unlinked for a whole grace period: deleted.
+    assert.deepEqual(await app.attachments.sweep(notes, Date.now() + 3 * day), [goneName]);
+    assert.deepEqual(files(), [keptName]);
+  } finally {
+    await app.close();
+  }
+});
