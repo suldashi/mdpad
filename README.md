@@ -6,9 +6,9 @@ A self-hosted Markdown notes editor with real-time collaborative editing.
 - **Real-time collaboration.** Several people (or tabs, or devices) can edit the same note at once. Changes are merged with operational transformation, implemented from scratch in [`src/shared/ot.ts`](src/shared/ot.ts).
 - **Works with other editors.** If you change a note's file with another program while it is open in Mdpad, the change is merged into the live note.
 - **Offline tolerant.** If the connection drops, keep typing; your edits are merged in when it comes back.
-- **Edit the formatted note.** Notes show as formatted Markdown and you edit them right there; the line you're on reveals its Markdown syntax. A raw mode shows the plain source.
+- **Edit the formatted note.** Notes show formatted and you edit them like a word processor; Markdown you type, like `**bold**` or `- `, turns into formatting as you go (the editor is [Milkdown](https://milkdown.dev)). A raw mode shows the plain Markdown.
 - **Phone friendly.** The editor fills the screen, and the note list is a drawer you can tuck away.
-- **No runtime dependencies.** The server uses only Node's built-in modules, including its own small WebSocket implementation. TypeScript is the only (dev) dependency.
+- **No runtime dependencies.** The server uses only Node's built-in modules, including its own small WebSocket implementation. The build uses TypeScript, esbuild and Milkdown, which is bundled into the browser code.
 - **No authentication.** Mdpad expects to sit behind whatever already protects your network or reverse proxy. Don't expose it to the internet on its own.
 
 ## Run it
@@ -16,8 +16,8 @@ A self-hosted Markdown notes editor with real-time collaborative editing.
 You need Node.js 22 or newer.
 
 ```sh
-npm install      # installs TypeScript, used only for the build
-npm run build    # compiles src/ and test/ into dist/
+npm install      # build tools and the editor library
+npm run build    # compiles the server and bundles the browser code into dist/
 npm start        # http://127.0.0.1:3000
 ```
 
@@ -54,7 +54,8 @@ location / {
 
 - **Title:** the large field above the text. Changing it renames the `.md` file (press Enter or click away to apply). Titles can't contain `/ \ < > : " | ? *`.
 - **Notes list:** the ☰ button (or Ctrl+\\) shows and hides it. On a phone it slides over the editor. **New note** is at the top of the list, and each note has a delete button (shown on hover, and always on the open note).
-- **Formatted editing (the default):** type as usual; headings, bold, lists, links and so on render as you go. The line with the cursor shows its Markdown syntax so you can change it. Click a checkbox to tick a task. A link opens when you click it on a formatted line, or with Ctrl/Cmd-click anywhere. Ctrl+B and Ctrl+I make text bold or italic. Copying gives you the Markdown source.
+- **Formatted editing (the default):** type as usual. Markdown turns into formatting as you type it: `# ` makes a heading, `**bold**` makes bold text, `- ` or `1. ` starts a list, `> ` a quote, and three backticks a code block. Ctrl+B and Ctrl+I make text bold or italic. Click left of a task to tick it. Ctrl/Cmd-click opens a link.
+- **Your file keeps its style.** Edits are written back to the `.md` file touching only what you changed, so the rest keeps its formatting (for example `*` bullets or `__bold__`). A line you edit may be rewritten in the editor's style, and when keeping the old style would change the meaning, the editor's version is used.
 - **Raw mode:** the **Raw** button (or Ctrl+E) switches to a plain text editor with the Markdown source, and back. Each page load starts in formatted mode.
 - **Undo/redo:** Ctrl+Z, Ctrl+Shift+Z or Ctrl+Y. Undo only takes back your own edits, not other people's.
 - **Lists:** pressing Enter in a list item starts the next item; pressing it on an empty item ends the list.
@@ -78,10 +79,10 @@ src/server/app.ts       HTTP API, static files, WebSocket protocol
 src/server/docs.ts      Open notes: applying edits, saving to disk, picking up outside edits
 src/server/store.ts     Reading and writing .md files
 src/server/websocket.ts Minimal WebSocket server (RFC 6455)
+src/shared/diff.ts      Line diffs: small edits from text changes, and keeping a file's style
 src/client/main.ts      App shell: note list, title, switching views
 src/client/model.ts     The open note's text and undo history, shared by both views
-src/client/live-view.ts Formatted editor (contenteditable kept in step with the Markdown text)
-src/client/live-render.ts  Markdown to formatted lines, keeping every source character
+src/client/wysiwyg-view.ts  Formatted editor (Milkdown), bridged to the Markdown text
 src/client/textarea-view.ts  Raw editor
 src/client/session.ts   Syncing one note with the server; connection.ts reconnects
 public/                 index.html, CSS, icon

@@ -11,7 +11,7 @@ import { attachWebSocketServer, type WebSocketConnection } from './websocket.js'
 export interface AppOptions extends DocOptions {
   notesDir: string;
   publicDir: string; // index.html, styles, icons
-  jsDir: string;     // compiled browser code (dist/src)
+  jsDir: string;     // bundled browser code (dist/public/js)
 }
 
 export interface App {
@@ -39,7 +39,7 @@ const SECURITY_HEADERS = {
   'Referrer-Policy': 'same-origin',
   'Content-Security-Policy':
     "default-src 'self'; img-src 'self' data: https: http:; connect-src 'self' ws: wss:; " +
-    "style-src 'self'; script-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'self'"
+    "style-src 'self' 'unsafe-inline'; script-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'self'"
 };
 
 class HttpError extends Error {

@@ -1,6 +1,7 @@
 // Keeps one open note in sync with the server.
 
 import * as OT from '../shared/ot.js';
+import { diffOp } from '../shared/diff.js';
 import type { Connection } from './connection.js';
 import type { EditorModel } from './model.js';
 
@@ -126,7 +127,7 @@ export class NoteSession {
     if (old && pending) {
       // Keep our unsent edits: transform them past whatever changed on the
       // server, then send them again.
-      const serverChange = OT.fromDiff(old.serverText, text);
+      const serverChange = diffOp(old.serverText, text);
       const [mine, theirs] = OT.transform(pending, serverChange);
       this.client = new OT.Client(rev, text, old.seq);
       this.model.remote(theirs);
@@ -135,7 +136,7 @@ export class NoteSession {
       if (msg) this.sendOp(msg);
     } else if (old) {
       this.client = new OT.Client(rev, text, old.seq);
-      this.model.remote(OT.fromDiff(this.model.value, text));
+      this.model.remote(diffOp(this.model.value, text));
       this.ready = true;
     } else {
       this.client = new OT.Client(rev, text);

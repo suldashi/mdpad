@@ -14,7 +14,7 @@ async function startApp(): Promise<{ app: App; base: string; dir: string }> {
   const app = createApp({
     notesDir: dir,
     publicDir: path.join(import.meta.dirname, '../../public'),
-    jsDir: path.join(import.meta.dirname, '../src'),
+    jsDir: path.join(import.meta.dirname, '../public/js'),
     saveDelay: 10,
     saveMaxWait: 50,
     watchInterval: 50
@@ -157,8 +157,8 @@ test('serves the app and compiled scripts but nothing outside them', async () =>
   try {
     let res = await fetch(base + '/');
     assert.equal(res.status, 200);
-    assert.match(await res.text(), /<div id="live"/);
-    res = await fetch(base + '/js/shared/ot.js');
+    assert.match(await res.text(), /<div id="editor"/);
+    res = await fetch(base + '/js/client/main.js');
     assert.equal(res.status, 200);
     assert.match(res.headers.get('content-type')!, /javascript/);
     res = await fetch(base + '/js/../../package.json');

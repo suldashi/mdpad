@@ -11,6 +11,7 @@
   <title>Mdpad</title>
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="stylesheet" href="/js/client/main.css">
   <link rel="stylesheet" href="/style.css">
   <script type="module" src="/js/client/main.js"></script>
 </head>
@@ -43,7 +44,7 @@
 
       <div id="page">
         <input id="title" type="text" aria-label="Title" placeholder="Title" autocomplete="off" spellcheck="false" maxlength="200">
-        <div id="live" class="live" aria-label="Note" data-placeholder="Start writing…"></div>
+        <div id="editor" class="wysiwyg" aria-label="Note"></div>
         <textarea id="raw" aria-label="Note (Markdown)" placeholder="Start writing in Markdown…" spellcheck="true" hidden></textarea>
       </div>
 

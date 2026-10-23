@@ -1,8 +1,11 @@
 // The app shell: note list, title and the two editor views.
 
+import '@milkdown/kit/prose/view/style/prosemirror.css';
+import '@milkdown/kit/prose/gapcursor/style/gapcursor.css';
+import '@milkdown/kit/prose/tables/style/tables.css';
 import { Connection } from './connection.js';
 import { EditorModel } from './model.js';
-import { LiveView } from './live-view.js';
+import { WysiwygView } from './wysiwyg-view.js';
 import { TextareaView } from './textarea-view.js';
 import { NoteSession } from './session.js';
 
@@ -20,7 +23,7 @@ const app = $('app');
 const list = $('note-list');
 const titleInput = $<HTMLInputElement>('title');
 const raw = $<HTMLTextAreaElement>('raw');
-const live = $('live');
+const editorEl = $('editor');
 const statusEl = $('status');
 const presenceEl = $('presence');
 const emptyEl = $('empty');
@@ -29,7 +32,7 @@ const rawButton = $<HTMLButtonElement>('toggle-raw');
 
 const conn = new Connection();
 const model = new EditorModel();
-const liveView = new LiveView(live, model);
+const wysiwyg = new WysiwygView(editorEl, model);
 const rawView = new TextareaView(raw, model);
 let session: NoteSession | null = null;
 let notes: NoteInfo[] = [];
@@ -175,8 +178,8 @@ function setRaw(on: boolean, focus = true): void {
   rawMode = on;
   rawButton.setAttribute('aria-pressed', String(on));
   rawButton.title = on ? 'Back to formatted view (Ctrl+E)' : 'Edit raw Markdown (Ctrl+E)';
-  if (on) { liveView.hide(); rawView.show(); }
-  else { rawView.hide(); liveView.show(); }
+  if (on) { wysiwyg.hide(); rawView.show(); }
+  else { rawView.hide(); wysiwyg.show(); }
   // Coming back from raw leaves the formatted view unfocused, so the whole
   // note shows formatted and no line reveals its Markdown until clicked.
   if (on && focus && session && !mobile.matches) focusEditor();
@@ -185,12 +188,12 @@ function setRaw(on: boolean, focus = true): void {
 
 function focusEditor(): void {
   if (rawMode) raw.focus();
-  else liveView.focus();
+  else wysiwyg.focus();
 }
 
 function setEditable(on: boolean): void {
   raw.readOnly = !on;
-  live.contentEditable = on ? 'true' : 'false';
+  wysiwyg.setEditable(on);
   app.classList.toggle('loading', !on);
 }
 

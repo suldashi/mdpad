@@ -1,0 +1,18 @@
+{
+  // Browser code. esbuild bundles it (with Milkdown) into dist/public/js;
+  // tsc only type-checks it.
+  "compilerOptions": {
+    "target": "es2022",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "lib": ["es2023", "dom", "dom.iterable"],
+    "types": [],
+    "strict": true,
+    "noUnusedLocals": true,
+    "noFallthroughCasesInSwitch": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": ["src/client/**/*.ts", "src/shared/**/*.ts"]
+}

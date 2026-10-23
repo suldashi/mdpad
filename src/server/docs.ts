@@ -6,6 +6,7 @@
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import * as OT from '../shared/ot.js';
+import { diffOp } from '../shared/diff.js';
 import { Store, StoreError, cleanTitle } from './store.js';
 
 const SAVE_DELAY = 300;     // ms after the last edit
@@ -217,7 +218,7 @@ export class DocManager {
 
     // `external` turns lastSaved into the disk version; `unsaved` turns
     // lastSaved into the live text. Transforming one past the other merges both.
-    const external = OT.fromDiff(doc.lastSaved, text);
+    const external = diffOp(doc.lastSaved, text);
     let toApply = external;
     let stillUnsaved: OT.Op | null = null;
     if (doc.unsaved) {
