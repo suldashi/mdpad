@@ -1,0 +1,9 @@
+{
+  "name": "Mdpad",
+  "short_name": "Mdpad",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#fbfbfa",
+  "theme_color": "#2f6f5e",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}

@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#fbfbfa" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1b1b1d" media="(prefers-color-scheme: dark)">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <title>Mdpad</title>
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="stylesheet" href="/style.css">
+  <script type="module" src="/js/client/main.js"></script>
+</head>
+<body>
+  <div id="app" class="booting">
+    <aside id="sidebar" aria-label="Notes">
+      <nav id="note-list"></nav>
+    </aside>
+    <div id="scrim" aria-hidden="true"></div>
+
+    <main id="main">
+      <header id="bar">
+        <button id="toggle-sidebar" class="icon-button" type="button" aria-label="Show or hide notes" aria-controls="sidebar" title="Notes (Ctrl+\)">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+        </button>
+        <span id="status" role="status" data-state="synced"></span>
+        <span class="spacer"></span>
+        <span id="presence" hidden></span>
+        <button id="toggle-preview" class="text-button" type="button" aria-pressed="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+          <span class="label">Preview</span>
+        </button>
+        <button id="new-note" class="icon-button" type="button" aria-label="New note" title="New note">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+        <button id="delete-note" class="icon-button" type="button" aria-label="Delete note" title="Delete note">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>
+        </button>
+      </header>
+
+      <div id="page">
+        <input id="title" type="text" aria-label="Title" placeholder="Title" autocomplete="off" spellcheck="false" maxlength="200">
+        <textarea id="editor" aria-label="Note" placeholder="Start writing in Markdown…" spellcheck="true" readonly></textarea>
+        <article id="preview" class="markdown" hidden></article>
+      </div>
+
+      <div id="empty" hidden>
+        <p>No notes yet.</p>
+        <button id="empty-new" class="primary-button" type="button">Create a note</button>
+      </div>
+    </main>
+  </div>
+  <div id="toast" role="alert" hidden></div>
+</body>
+</html>

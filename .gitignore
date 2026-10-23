@@ -1,0 +1,4 @@
+node_modules/
+dist/
+# Notes are user data, not source.
+notes/
