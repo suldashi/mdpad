@@ -7,6 +7,7 @@ A self-hosted Markdown notes editor with real-time collaborative editing.
 - **Works with other editors.** If you change a note's file with another program while it is open in Mdpad, the change is merged into the live note.
 - **Offline tolerant.** If the connection drops, keep typing; your edits are merged in when it comes back.
 - **Edit the formatted note.** Notes show formatted and you edit them like a word processor; Markdown you type, like `**bold**` or `- `, turns into formatting as you go (the editor is [Milkdown](https://milkdown.dev)). A raw mode shows the plain Markdown.
+- **Images and files.** Paste or drop a file into a note (or use the 📎 button) and it is saved next to your notes and linked in. Images show inline.
 - **Phone friendly.** The editor fills the screen, and the note list is a drawer you can tuck away.
 - **No runtime dependencies.** The server uses only Node's built-in modules, including its own small WebSocket implementation. The build uses TypeScript, esbuild and Milkdown, which is bundled into the browser code.
 - **No authentication.** Mdpad expects to sit behind whatever already protects your network or reverse proxy. Don't expose it to the internet on its own.
@@ -32,6 +33,8 @@ Set these as environment variables:
 | `PORT`      | `3000`      | Port to listen on.                                                           |
 | `HOST`      | `127.0.0.1` | Address to listen on. Use `0.0.0.0` to reach it from other devices, such as your phone on the same network. |
 | `NOTES_DIR` | `notes`     | Folder for the `.md` files, relative to the project folder or absolute.     |
+| `MAX_UPLOAD_MB` | `25`    | Largest file that can be attached to a note, in megabytes.                   |
+| `ATTACHMENT_GRACE_HOURS` | `24` | How long an attached file may go unlinked before it is deleted. `0` never deletes attachments. |
 
 For example: `HOST=0.0.0.0 PORT=8080 NOTES_DIR=/srv/notes npm start`
 
@@ -57,6 +60,10 @@ location / {
 - **Formatted editing (the default):** type as usual. Markdown turns into formatting as you type it: `# ` makes a heading, `**bold**` makes bold text, `- ` or `1. ` starts a list, `> ` a quote, and three backticks a code block. Ctrl+B and Ctrl+I make text bold or italic. Click left of a task to tick it. Ctrl/Cmd-click opens a link.
 - **Your file keeps its style.** Edits are written back to the `.md` file touching only what you changed, so the rest keeps its formatting (for example `*` bullets or `__bold__`). A line you edit may be rewritten in the editor's style, and when keeping the old style would change the meaning, the editor's version is used.
 - **Raw mode:** the **Raw** button (or Ctrl+E) switches to a plain text editor with the Markdown source, and back. Each page load starts in formatted mode.
+- **Images and files:** paste or drop them into a note, or pick them with the 📎 button (on a phone, that's how you add photos). They're saved in `attachments/` inside the notes folder, and the note links to them with a relative path, such as `![photo](attachments/photo-1a2b3c4d5e.png)`. Images show inline; other files are links (Ctrl/Cmd-click to open). Because the paths are relative, the notes folder also works as is in other Markdown apps, like Obsidian or VS Code.
+  - A file's name gets a short hash of its contents, so the same file added twice is stored once.
+  - Files that no note links to anymore are deleted automatically once they've gone unlinked for 24 hours (checked hourly). Until then, undo, cut and paste, or restoring a deleted note brings them back. Several notes can link the same file; it stays as long as any of them does.
+  - HTML and other files a browser could run are served as downloads, not shown.
 - **Undo/redo:** Ctrl+Z, Ctrl+Shift+Z or Ctrl+Y. Undo only takes back your own edits, not other people's.
 - **Lists:** pressing Enter in a list item starts the next item; pressing it on an empty item ends the list.
 - The dot next to the menu button shows whether everything is saved (green), saving or connecting (amber), or offline (red). The "2 editing" badge appears when someone else has the same note open.
@@ -78,12 +85,14 @@ src/server/main.ts      Entry point and settings
 src/server/app.ts       HTTP API, static files, WebSocket protocol
 src/server/docs.ts      Open notes: applying edits, saving to disk, picking up outside edits
 src/server/store.ts     Reading and writing .md files
+src/server/attachments.ts  Storing and serving attached files
 src/server/websocket.ts Minimal WebSocket server (RFC 6455)
 src/shared/diff.ts      Line diffs: small edits from text changes, and keeping a file's style
 src/client/main.ts      App shell: note list, title, switching views
 src/client/model.ts     The open note's text and undo history, shared by both views
 src/client/wysiwyg-view.ts  Formatted editor (Milkdown), bridged to the Markdown text
 src/client/textarea-view.ts  Raw editor
+src/client/attachments.ts  Uploading pasted and dropped files
 src/client/session.ts   Syncing one note with the server; connection.ts reconnects
 public/                 index.html, CSS, icon
 test/                   Tests (node:test)
@@ -105,8 +114,10 @@ When a client reconnects it asks for the edits it missed and recognises its own 
 | `POST`   | `/api/notes`          | `{ title?, text? }`  | `201 { title }`; a number is added if the title is taken |
 | `PATCH`  | `/api/notes/:title`   | `{ title }`          | `{ title }`, renames the file  |
 | `DELETE` | `/api/notes/:title`   |                      | `204`, deletes the file        |
+| `POST`   | `/api/attachments?name=` | the file's bytes  | `201 { url, name, image, size }`; `url` is the path to put in the note |
+| `GET`    | `/attachments/:file`  |                      | The file                       |
 
-Requests with a body must be sent as `application/json`.
+Requests to `/api/notes` with a body must be sent as `application/json`. Uploads must carry an `X-Mdpad-Upload: 1` header. Both rules stop other websites from sending requests to Mdpad through your browser.
 
 ## License
 

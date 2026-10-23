@@ -189,6 +189,8 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 
 .icon-button { padding: 0; }
 
+.icon-button:disabled { opacity: 0.4; cursor: default; }
+
 .icon-button:hover, .text-button:hover { background: color-mix(in srgb, var(--text) 7%, transparent); color: var(--text); }
 
 .text-button[aria-pressed="true"] { color: var(--accent); }
@@ -221,7 +223,7 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
   white-space: nowrap;
 }
 
-.no-note #toggle-raw, .no-note #page, .no-note #status { visibility: hidden; }
+.no-note #attach, .no-note #toggle-raw, .no-note #page, .no-note #status { visibility: hidden; }
 
 /* ------------------------------------------------------------- page */
 
@@ -331,6 +333,8 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 #editor .ProseMirror blockquote { margin: 0 0 0.75em; padding-left: 1em; border-left: 3px solid var(--border); color: var(--muted); }
 #editor .ProseMirror hr { border: 0; border-top: 1px solid var(--border); margin: 1.5em 0; }
 #editor .ProseMirror img { max-width: 100%; height: auto; border-radius: 6px; }
+#editor .upload-placeholder { display: inline-block; padding: 2px 8px; border-radius: 6px; background: var(--code-bg); color: var(--muted); font-size: 0.9em; animation: pulse 1.2s ease-in-out infinite alternate; }
+@keyframes pulse { from { opacity: 1; } to { opacity: 0.5; } }
 #editor .ProseMirror table { border-collapse: collapse; margin: 0 0 0.75em; }
 #editor .ProseMirror th, #editor .ProseMirror td { border: 1px solid var(--border); padding: 6px 12px; vertical-align: top; }
 #editor .ProseMirror th { background: var(--surface); }
@@ -430,7 +434,7 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 }
 
 @media (prefers-reduced-motion: reduce) {
-  * { transition: none !important; }
+  * { transition: none !important; animation: none !important; }
 }
 
 /* No sliding while the app sets up its initial layout. */
