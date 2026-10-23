@@ -29,6 +29,8 @@ const presenceEl = $('presence');
 const emptyEl = $('empty');
 const toast = $('toast');
 const rawButton = $<HTMLButtonElement>('toggle-raw');
+const attachButton = $<HTMLButtonElement>('attach');
+const attachInput = $<HTMLInputElement>('attach-input');
 
 const conn = new Connection();
 const model = new EditorModel();
@@ -193,6 +195,7 @@ function focusEditor(): void {
 
 function setEditable(on: boolean): void {
   raw.readOnly = !on;
+  attachButton.disabled = !on;
   wysiwyg.setEditable(on);
   app.classList.toggle('loading', !on);
 }
@@ -330,6 +333,23 @@ $('scrim').addEventListener('click', () => setSidebar(false, false));
 $('new-note').addEventListener('click', () => void createNote());
 $('empty-new').addEventListener('click', () => void createNote());
 rawButton.addEventListener('click', () => setRaw(!rawMode));
+
+wysiwyg.onError = showToast;
+rawView.onError = showToast;
+attachButton.addEventListener('click', () => attachInput.click());
+attachInput.addEventListener('change', () => {
+  const files = Array.from(attachInput.files ?? []);
+  attachInput.value = '';
+  if (!files.length || !session) return;
+  if (rawMode) rawView.insertFiles(files);
+  else wysiwyg.insertFiles(files);
+});
+// A file dropped outside the editor would otherwise open in place of the app.
+for (const type of ['dragover', 'drop'] as const) {
+  document.addEventListener(type, (e) => {
+    if (e.dataTransfer?.types.includes('Files') && !e.defaultPrevented) e.preventDefault();
+  });
+}
 
 list.addEventListener('click', (e) => {
   // Re-selecting the open note on a phone should still close the drawer.

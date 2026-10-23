@@ -13,11 +13,17 @@ import { gfm } from '@milkdown/kit/preset/gfm';
 import { history } from '@milkdown/kit/plugin/history';
 import { clipboard } from '@milkdown/kit/plugin/clipboard';
 import { $prose } from '@milkdown/kit/utils';
-import { Plugin, EditorState } from '@milkdown/kit/prose/state';
-import type { EditorView } from '@milkdown/kit/prose/view';
+import { Plugin, PluginKey, EditorState } from '@milkdown/kit/prose/state';
+import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view';
 import type { Node as PMNode } from '@milkdown/kit/prose/model';
 import { diffOp, rebaseEdit } from '../shared/diff.js';
 import type { EditorModel, Change } from './model.js';
+import { uploadAll, altText, pastedFiles, droppedFiles } from './attachments.js';
+
+// Marks where uploading files will go, so the spot moves with edits made
+// while they upload.
+const uploadKey = new PluginKey<DecorationSet>('mdpad-upload');
+type UploadAction = { add: { id: symbol; pos: number; label: string } } | { remove: symbol };
 
 export class WysiwygView {
   readonly root: HTMLElement;
@@ -29,6 +35,7 @@ export class WysiwygView {
   private applying = false;  // true while we apply a change that came from the model
   private editable = true;
   active = false;
+  onError: (message: string) => void = () => {};
   readonly ready: Promise<void>;
 
   constructor(root: HTMLElement, model: EditorModel) {
@@ -48,6 +55,43 @@ export class WysiwygView {
       })
     }));
 
+    // Pasting or dropping files uploads them and links them in.
+    const uploads = $prose(() => new Plugin<DecorationSet>({
+      key: uploadKey,
+      state: {
+        init: () => DecorationSet.empty,
+        apply: (tr, set) => {
+          set = set.map(tr.mapping, tr.doc);
+          const action = tr.getMeta(uploadKey) as UploadAction | undefined;
+          if (action && 'add' in action) {
+            const el = document.createElement('span');
+            el.className = 'upload-placeholder';
+            el.textContent = action.add.label;
+            set = set.add(tr.doc, [Decoration.widget(action.add.pos, el, { id: action.add.id })]);
+          } else if (action) {
+            set = set.remove(set.find(undefined, undefined, (spec) => spec.id === action.remove));
+          }
+          return set;
+        }
+      },
+      props: {
+        decorations: (state) => uploadKey.getState(state),
+        handlePaste: (view, e) => {
+          const files = pastedFiles(e);
+          if (!files.length || !this.editable) return false;
+          this.insertFiles(files, view.state.selection.from);
+          return true;
+        },
+        handleDrop: (view, e) => {
+          const files = droppedFiles(e as DragEvent);
+          if (!files.length || !this.editable) return false;
+          const at = view.posAtCoords({ left: (e as DragEvent).clientX, top: (e as DragEvent).clientY });
+          this.insertFiles(files, at ? at.pos : view.state.selection.from);
+          return true;
+        }
+      }
+    }));
+
     // Left out: writing empty paragraphs as "<br />" (it would put HTML into
     // notes), and heading ids, which change whenever a heading is edited and
     // would make documents differ when their Markdown doesn't.
@@ -64,6 +108,7 @@ export class WysiwygView {
       .use(commonmark.filter((plugin) => !skip.has(plugin)))
       .use(gfm)
       .use(history)
+      .use(uploads)
       .use(clipboard)
       .use(watcher)
       .create();
@@ -96,6 +141,47 @@ export class WysiwygView {
   setEditable(on: boolean): void {
     this.editable = on;
     this.view?.setProps({});
+  }
+
+  // Uploads files and links them in at `pos` (the cursor by default):
+  // images show inline, other files become links.
+  insertFiles(files: File[], pos?: number): void {
+    const view = this.view;
+    if (!view || !files.length) return;
+    const id = Symbol('upload');
+    const label = files.length === 1 ? `Uploading ${files[0].name || 'file'}…` : `Uploading ${files.length} files…`;
+    const at = pos ?? view.state.selection.from;
+    view.dispatch(view.state.tr.setMeta(uploadKey, { add: { id, pos: at, label } } satisfies UploadAction));
+    void uploadAll(files, this.onError).then((done) => {
+      const view = this.view!;
+      const found = uploadKey.getState(view.state)?.find(undefined, undefined, (spec) => spec.id === id)[0];
+      if (!found) {
+        // The note was switched or reloaded while uploading.
+        if (done.length) this.onError('The upload finished after you switched notes or views, so it was not linked. The file is in the attachments folder.');
+        return;
+      }
+      const tr = view.state.tr.setMeta(uploadKey, { remove: id } satisfies UploadAction);
+      if (done.length) {
+        const { schema } = view.state;
+        const nodes: PMNode[] = [];
+        for (const u of done) {
+          if (nodes.length) nodes.push(schema.text(' '));
+          nodes.push(u.image
+            ? schema.nodes.image.create({ src: u.url, alt: altText(u) })
+            : schema.text(u.name, [schema.marks.link.create({ href: u.url })]));
+        }
+        // Keep the files apart from words right next to them.
+        const $pos = view.state.doc.resolve(found.from);
+        if ($pos.parent.isTextblock) {
+          const off = $pos.parentOffset;
+          const near = (from: number, to: number) => $pos.parent.textBetween(from, to, undefined, '\ufffc');
+          if (off > 0 && /\S/.test(near(off - 1, off))) nodes.unshift(schema.text(' '));
+          if (off < $pos.parent.content.size && /\S/.test(near(off, off + 1))) nodes.push(schema.text(' '));
+        }
+        tr.replaceWith(found.from, found.from, nodes);
+      }
+      view.dispatch(tr);
+    });
   }
 
   // Replaces the whole document (and the undo history) with the model's text.
