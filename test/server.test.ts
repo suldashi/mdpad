@@ -5,11 +5,12 @@ import os from 'node:os';
 import path from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { createApp, type App } from '../src/server/app.js';
+import { cleanFileName } from '../src/server/attachments.js';
 import * as OT from '../src/shared/ot.js';
 
 type Msg = Record<string, any>;
 
-async function startApp(): Promise<{ app: App; base: string; dir: string }> {
+async function startApp(extra: { maxUpload?: number } = {}): Promise<{ app: App; base: string; dir: string }> {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mdpad-test-'));
   const app = createApp({
     notesDir: dir,
@@ -17,7 +18,8 @@ async function startApp(): Promise<{ app: App; base: string; dir: string }> {
     jsDir: path.join(import.meta.dirname, '../public/js'),
     saveDelay: 10,
     saveMaxWait: 50,
-    watchInterval: 50
+    watchInterval: 50,
+    ...extra
   });
   await new Promise<void>((resolve) => app.server.listen(0, '127.0.0.1', resolve));
   const port = (app.server.address() as AddressInfo).port;
@@ -320,6 +322,106 @@ test('opening a missing note reports it', async () => {
     await waitFor(() => a.messages.some((m) => m.type === 'error' && m.notFound));
   } finally {
     a.close();
+    await app.close();
+  }
+});
+
+function upload(base: string, name: string, body: string | Uint8Array, headers: Record<string, string> = { 'X-Mdpad-Upload': '1' }): Promise<Response> {
+  return fetch(`${base}/api/attachments?name=${encodeURIComponent(name)}`, { method: 'POST', headers, body });
+}
+
+test('attachments are stored once under a content-hashed name and served back', async () => {
+  const { app, base, dir } = await startApp();
+  try {
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4]);
+    const res = await upload(base, 'My photo (1).PNG', png);
+    assert.equal(res.status, 201);
+    const info: any = await res.json();
+    assert.match(info.url, /^attachments\/My-photo-1-[0-9a-f]{10}\.png$/);
+    assert.equal(info.name, 'My photo (1).PNG');
+    assert.equal(info.image, true);
+    assert.deepEqual(fs.readdirSync(path.join(dir, 'attachments')), [info.url.slice('attachments/'.length)]);
+
+    // The same file again is the same attachment.
+    const again: any = await (await upload(base, 'My photo (1).PNG', png)).json();
+    assert.equal(again.url, info.url);
+    assert.equal(fs.readdirSync(path.join(dir, 'attachments')).length, 1);
+
+    // Attachments don't show up as notes.
+    assert.deepEqual((await json(base, 'GET', '/api/notes')).body.notes, []);
+
+    const got = await fetch(`${base}/${info.url}`);
+    assert.equal(got.status, 200);
+    assert.equal(got.headers.get('content-type'), 'image/png');
+    assert.deepEqual(new Uint8Array(await got.arrayBuffer()), png);
+
+    const part = await fetch(`${base}/${info.url}`, { headers: { Range: 'bytes=2-4' } });
+    assert.equal(part.status, 206);
+    assert.equal(part.headers.get('content-range'), 'bytes 2-4/8');
+    assert.deepEqual(new Uint8Array(await part.arrayBuffer()), png.slice(2, 5));
+  } finally {
+    await app.close();
+  }
+});
+
+test('attachments that could run scripts are downloads, and uploads are checked', async () => {
+  const { app, base, dir } = await startApp({ maxUpload: 32 });
+  try {
+    const html: any = await (await upload(base, 'page.html', '<script>1</script>')).json();
+    assert.equal(html.image, false);
+    const got = await fetch(`${base}/${html.url}`);
+    assert.equal(got.headers.get('content-type'), 'application/octet-stream');
+    assert.match(got.headers.get('content-disposition') || '', /^attachment/);
+    assert.match(got.headers.get('content-security-policy') || '', /sandbox/);
+
+    assert.equal((await upload(base, 'a.txt', 'x', {})).status, 400);
+    assert.equal((await upload(base, 'big.txt', 'x'.repeat(33))).status, 413);
+    assert.equal((await upload(base, 'empty.txt', '')).status, 400);
+    // Without a declared length, the limit applies while the file streams in.
+    const stream = new ReadableStream({ start(c) { c.enqueue(new Uint8Array(20)); c.enqueue(new Uint8Array(20)); c.close(); } });
+    const streamed = await fetch(`${base}/api/attachments?name=s.bin`, { method: 'POST', headers: { 'X-Mdpad-Upload': '1' }, body: stream, duplex: 'half' } as RequestInit);
+    assert.equal(streamed.status, 413);
+    assert.deepEqual(fs.readdirSync(path.join(dir, 'attachments')).filter((f) => f.endsWith('.tmp')), []);
+    assert.equal((await fetch(`${base}/attachments/..%2Fsecret.md`)).status, 404);
+    assert.equal((await fetch(`${base}/attachments/missing.png`)).status, 404);
+  } finally {
+    await app.close();
+  }
+});
+
+test('attachment names are made safe for links', () => {
+  assert.deepEqual(cleanFileName('Screenshot 2026-10-23 at 18.40.12.png'), { base: 'Screenshot-2026-10-23-at-18-40-12', ext: 'png' });
+  assert.deepEqual(cleanFileName('../../etc/passwd'), { base: 'passwd', ext: '' });
+  assert.deepEqual(cleanFileName('.hidden'), { base: 'hidden', ext: '' });
+  assert.deepEqual(cleanFileName('Ünïcödé café.JPG'), { base: 'Ünïcödé-café', ext: 'jpg' });
+  assert.deepEqual(cleanFileName('(((.pdf'), { base: 'file', ext: 'pdf' });
+});
+
+test('attachments no note links to are deleted after the grace period', async () => {
+  const { app, base, dir } = await startApp();
+  try {
+    const linked: any = await (await upload(base, 'kept.png', 'kept')).json();
+    const unlinked: any = await (await upload(base, 'gone.png', 'gone')).json();
+    const keptName = linked.url.slice('attachments/'.length);
+    const goneName = unlinked.url.slice('attachments/'.length);
+    fs.writeFileSync(path.join(dir, 'Pics.md'), `![kept](${linked.url})\n`);
+    fs.writeFileSync(path.join(dir, 'attachments', '.upload-old.tmp'), 'x');
+    const day = 24 * 3600 * 1000;
+    const notes = [fs.readFileSync(path.join(dir, 'Pics.md'), 'utf8')];
+    const files = () => fs.readdirSync(path.join(dir, 'attachments')).sort();
+
+    // Fresh uploads are left alone, linked or not.
+    assert.deepEqual(await app.attachments.sweep(notes), []);
+    // Old enough: the unlinked file starts its wait, and the crash leftover goes.
+    assert.deepEqual(await app.attachments.sweep(notes, Date.now() + day), []);
+    assert.deepEqual(files(), [goneName, keptName].sort());
+    // Linked again in the meantime: the wait starts over.
+    assert.deepEqual(await app.attachments.sweep([...notes, unlinked.url], Date.now() + 1.5 * day), []);
+    assert.deepEqual(await app.attachments.sweep(notes, Date.now() + 2 * day), []);
+    // Unlinked for a whole grace period: deleted.
+    assert.deepEqual(await app.attachments.sweep(notes, Date.now() + 3 * day), [goneName]);
+    assert.deepEqual(files(), [keptName]);
+  } finally {
     await app.close();
   }
 });

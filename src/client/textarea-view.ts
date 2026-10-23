@@ -3,12 +3,15 @@
 import * as OT from '../shared/ot.js';
 import { EditorModel, changeEnd, type Change } from './model.js';
 import { enterEdit, wrapEdit, type Edit } from './edits.js';
+import { uploadAll, markdownFor, pastedFiles, droppedFiles } from './attachments.js';
 
 export class TextareaView {
   readonly ta: HTMLTextAreaElement;
   private model: EditorModel;
   private shown = '';
+  private resets = 0; // counts note switches, so a late upload can tell
   active = false;
+  onError: (message: string) => void = () => {};
 
   constructor(ta: HTMLTextAreaElement, model: EditorModel) {
     this.ta = ta;
@@ -21,6 +24,38 @@ export class TextareaView {
     });
     ta.addEventListener('input', (e) => this.sync((e as InputEvent).inputType || 'insertText'));
     ta.addEventListener('keydown', (e) => this.onKeyDown(e));
+    ta.addEventListener('paste', (e) => {
+      const files = pastedFiles(e);
+      if (!files.length || ta.readOnly) return;
+      e.preventDefault();
+      this.insertFiles(files);
+    });
+    ta.addEventListener('drop', (e) => {
+      const files = droppedFiles(e);
+      if (!files.length || ta.readOnly) return;
+      e.preventDefault();
+      this.insertFiles(files);
+    });
+    model.subscribe((change) => { if (change.origin === 'reset') this.resets++; });
+  }
+
+  // Uploads files and inserts links to them at the cursor.
+  insertFiles(files: File[]): void {
+    const resets = this.resets;
+    void uploadAll(files, this.onError).then((done) => {
+      if (!done.length) return;
+      if (resets !== this.resets || !this.active) {
+        this.onError('The upload finished after you switched notes or views, so it was not linked. The file is in the attachments folder.');
+        return;
+      }
+      const ta = this.ta;
+      const { selectionStart: start, selectionEnd: end, value } = ta;
+      // Keep the links apart from words right next to them.
+      const text = (/\S/.test(value.charAt(start - 1)) ? ' ' : '') + done.map(markdownFor).join(' ') +
+        (/\S/.test(value.charAt(end)) ? ' ' : '');
+      ta.setRangeText(text, start, end, 'end');
+      this.sync('insertFromPaste');
+    });
   }
 
   // Shows the model's text after the view was hidden.

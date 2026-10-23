@@ -5,6 +5,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { Store, StoreError } from './store.js';
+import { Attachments, formatSize } from './attachments.js';
 import { DocManager, type Doc, type DocOptions, type Peer } from './docs.js';
 import { attachWebSocketServer, type WebSocketConnection } from './websocket.js';
 
@@ -12,11 +13,14 @@ export interface AppOptions extends DocOptions {
   notesDir: string;
   publicDir: string; // index.html, styles, icons
   jsDir: string;     // bundled browser code (dist/public/js)
+  maxUpload?: number; // largest attachment, in bytes
+  attachmentGrace?: number; // ms an attachment may go unlinked before it is deleted; 0 keeps them all
 }
 
 export interface App {
   server: http.Server;
   docs: DocManager;
+  attachments: Attachments;
   close(): Promise<void>;
 }
 
@@ -111,6 +115,55 @@ export function createApp(opts: AppOptions): App {
   const docs = new DocManager(store, opts);
   const publicDir = path.resolve(opts.publicDir);
   const jsDir = path.resolve(opts.jsDir);
+  const attachments = new Attachments(opts.notesDir, opts.maxUpload ?? 25 * 1024 * 1024, opts.attachmentGrace ?? 24 * 3600 * 1000);
+
+  // Every note's text: what's on disk, and the live text of open notes,
+  // which may not be saved yet.
+  async function allNoteTexts(): Promise<string[]> {
+    const texts = [...docs.docs.values()].map((doc) => doc.text);
+    for (const note of await store.list()) {
+      try {
+        texts.push(await store.read(note.title));
+      } catch {
+        // Removed meanwhile.
+      }
+    }
+    return texts;
+  }
+
+  async function sweepAttachments(): Promise<void> {
+    try {
+      const deleted = await attachments.sweep(await allNoteTexts());
+      if (deleted.length) console.log(`Deleted ${deleted.length} attachment(s) no note links to: ${deleted.join(', ')}`);
+    } catch (err) {
+      console.error('Could not clean up attachments:', (err as Error).message);
+    }
+  }
+  const sweepTimer = attachments.grace > 0
+    ? setInterval(() => void sweepAttachments(), Math.min(3600 * 1000, attachments.grace))
+    : null;
+  sweepTimer?.unref();
+  if (attachments.grace > 0) void sweepAttachments();
+
+  async function handleUpload(req: http.IncomingMessage, res: http.ServerResponse, url: URL): Promise<void> {
+    if (req.method !== 'POST') throw new HttpError(405, 'Method not allowed');
+    // A custom header means a page on another site cannot send this without
+    // a CORS preflight, which this server never approves.
+    if (req.headers['x-mdpad-upload'] !== '1') throw new HttpError(400, 'Missing upload header');
+    const length = Number(req.headers['content-length']);
+    if (length > attachments.maxSize) {
+      res.setHeader('Connection', 'close');
+      throw new HttpError(413, `Files can be at most ${formatSize(attachments.maxSize)}`);
+    }
+    const name = url.searchParams.get('name') || 'file';
+    try {
+      sendJson(res, 201, await attachments.save(name, req));
+    } catch (err) {
+      // The rest of the body is not read, so don't reuse the connection.
+      res.setHeader('Connection', 'close');
+      throw err;
+    }
+  }
 
   async function handleApi(req: http.IncomingMessage, res: http.ServerResponse, url: URL): Promise<void> {
     const parts = url.pathname.split('/').slice(3); // after /api/notes
@@ -153,7 +206,12 @@ export function createApp(opts: AppOptions): App {
       if (url.pathname === '/api/notes' || url.pathname.startsWith('/api/notes/')) {
         return await handleApi(req, res, url);
       }
+      if (url.pathname === '/api/attachments') return await handleUpload(req, res, url);
       if (req.method !== 'GET' && req.method !== 'HEAD') throw new HttpError(405, 'Method not allowed');
+      if (url.pathname.startsWith('/attachments/')) {
+        if (await attachments.serve(req, res, url.pathname.slice('/attachments/'.length), SECURITY_HEADERS)) return;
+        throw new HttpError(404, 'Not found');
+      }
       if (url.pathname.startsWith('/js/')) {
         if (await serveFile(req, res, jsDir, url.pathname.slice(4))) return;
       } else if (url.pathname !== '/' && await serveFile(req, res, publicDir, url.pathname)) {
@@ -250,7 +308,9 @@ export function createApp(opts: AppOptions): App {
   return {
     server,
     docs,
+    attachments,
     async close() {
+      if (sweepTimer) clearInterval(sweepTimer);
       wss.close();
       await docs.shutdown();
       await new Promise<void>((resolve) => server.close(() => resolve()));

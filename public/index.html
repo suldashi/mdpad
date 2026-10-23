@@ -36,6 +36,10 @@
         <span id="status" role="status" data-state="synced"></span>
         <span class="spacer"></span>
         <span id="presence" hidden></span>
+        <button id="attach" class="icon-button" type="button" aria-label="Attach files" title="Attach files (or paste or drop them)">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5l-8.6 8.6a5 5 0 0 1-7.1-7.1l8.6-8.6a3.3 3.3 0 0 1 4.7 4.7l-8.6 8.6a1.7 1.7 0 0 1-2.4-2.4l7.9-7.9"/></svg>
+        </button>
+        <input id="attach-input" type="file" multiple hidden>
         <button id="toggle-raw" class="text-button" type="button" aria-pressed="false" aria-label="Raw Markdown">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5"/></svg>
           <span class="label">Raw</span>
