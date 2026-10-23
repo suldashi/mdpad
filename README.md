@@ -6,6 +6,7 @@ A self-hosted Markdown notes editor with real-time collaborative editing.
 - **Real-time collaboration.** Several people (or tabs, or devices) can edit the same note at once. Changes are merged with operational transformation, implemented from scratch in [`src/shared/ot.ts`](src/shared/ot.ts).
 - **Works with other editors.** If you change a note's file with another program while it is open in Mdpad, the change is merged into the live note.
 - **Offline tolerant.** If the connection drops, keep typing; your edits are merged in when it comes back.
+- **Edit the formatted note.** Notes show as formatted Markdown and you edit them right there; the line you're on reveals its Markdown syntax. A raw mode shows the plain source.
 - **Phone friendly.** The editor fills the screen, and the note list is a drawer you can tuck away.
 - **No runtime dependencies.** The server uses only Node's built-in modules, including its own small WebSocket implementation. TypeScript is the only (dev) dependency.
 - **No authentication.** Mdpad expects to sit behind whatever already protects your network or reverse proxy. Don't expose it to the internet on its own.
@@ -52,8 +53,9 @@ location / {
 ## Using it
 
 - **Title:** the large field above the text. Changing it renames the `.md` file (press Enter or click away to apply). Titles can't contain `/ \ < > : " | ? *`.
-- **Notes list:** the ☰ button (or Ctrl+\\) shows and hides it. On a phone it slides over the editor.
-- **Preview:** the eye button (or Ctrl+E) switches between editing and the rendered Markdown.
+- **Notes list:** the ☰ button (or Ctrl+\\) shows and hides it. On a phone it slides over the editor. **New note** is at the top of the list, and each note has a delete button (shown on hover, and always on the open note).
+- **Formatted editing (the default):** type as usual; headings, bold, lists, links and so on render as you go. The line with the cursor shows its Markdown syntax so you can change it. Click a checkbox to tick a task. A link opens when you click it on a formatted line, or with Ctrl/Cmd-click anywhere. Ctrl+B and Ctrl+I make text bold or italic. Copying gives you the Markdown source.
+- **Raw mode:** the **Raw** button (or Ctrl+E) switches to a plain text editor with the Markdown source, and back. Each page load starts in formatted mode.
 - **Undo/redo:** Ctrl+Z, Ctrl+Shift+Z or Ctrl+Y. Undo only takes back your own edits, not other people's.
 - **Lists:** pressing Enter in a list item starts the next item; pressing it on an empty item ends the list.
 - The dot next to the menu button shows whether everything is saved (green), saving or connecting (amber), or offline (red). The "2 editing" badge appears when someone else has the same note open.
@@ -71,13 +73,17 @@ Project layout:
 
 ```
 src/shared/ot.ts        OT: operations, compose, transform, and the client and server state machines
-src/shared/markdown.ts  Markdown renderer (used by the browser; tested in Node)
 src/server/main.ts      Entry point and settings
 src/server/app.ts       HTTP API, static files, WebSocket protocol
 src/server/docs.ts      Open notes: applying edits, saving to disk, picking up outside edits
 src/server/store.ts     Reading and writing .md files
 src/server/websocket.ts Minimal WebSocket server (RFC 6455)
-src/client/             Browser code: app shell, textarea binding, connection, sync session
+src/client/main.ts      App shell: note list, title, switching views
+src/client/model.ts     The open note's text and undo history, shared by both views
+src/client/live-view.ts Formatted editor (contenteditable kept in step with the Markdown text)
+src/client/live-render.ts  Markdown to formatted lines, keeping every source character
+src/client/textarea-view.ts  Raw editor
+src/client/session.ts   Syncing one note with the server; connection.ts reconnects
 public/                 index.html, CSS, icon
 test/                   Tests (node:test)
 ```

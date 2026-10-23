@@ -157,7 +157,7 @@ test('serves the app and compiled scripts but nothing outside them', async () =>
   try {
     let res = await fetch(base + '/');
     assert.equal(res.status, 200);
-    assert.match(await res.text(), /<textarea id="editor"/);
+    assert.match(await res.text(), /<div id="live"/);
     res = await fetch(base + '/js/shared/ot.js');
     assert.equal(res.status, 200);
     assert.match(res.headers.get('content-type')!, /javascript/);

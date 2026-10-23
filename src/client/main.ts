@@ -1,8 +1,9 @@
-// The app shell: note list, title, editor and preview.
+// The app shell: note list, title and the two editor views.
 
-import { render } from '../shared/markdown.js';
 import { Connection } from './connection.js';
-import { TextBinding } from './binding.js';
+import { EditorModel } from './model.js';
+import { LiveView } from './live-view.js';
+import { TextareaView } from './textarea-view.js';
 import { NoteSession } from './session.js';
 
 interface NoteInfo {
@@ -18,19 +19,21 @@ function $<T extends HTMLElement>(id: string): T {
 const app = $('app');
 const list = $('note-list');
 const titleInput = $<HTMLInputElement>('title');
-const editor = $<HTMLTextAreaElement>('editor');
-const preview = $('preview');
+const raw = $<HTMLTextAreaElement>('raw');
+const live = $('live');
 const statusEl = $('status');
 const presenceEl = $('presence');
 const emptyEl = $('empty');
 const toast = $('toast');
-const previewButton = $<HTMLButtonElement>('toggle-preview');
+const rawButton = $<HTMLButtonElement>('toggle-raw');
 
 const conn = new Connection();
-const binding = new TextBinding(editor);
+const model = new EditorModel();
+const liveView = new LiveView(live, model);
+const rawView = new TextareaView(raw, model);
 let session: NoteSession | null = null;
 let notes: NoteInfo[] = [];
-let previewing = false;
+let rawMode = false;
 
 const mobile = window.matchMedia('(max-width: 760px)');
 
@@ -93,12 +96,16 @@ function setSidebar(open: boolean, remember = true): void {
   if (remember && !mobile.matches) store('mdpad.sidebar', open ? '1' : '0');
 }
 
+const TRASH_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>';
+
 function renderList(): void {
   const current = session?.title;
   list.replaceChildren(...notes.map((note) => {
+    const item = document.createElement('div');
+    item.className = 'note-item' + (note.title === current ? ' active' : '');
     const a = document.createElement('a');
     a.href = noteUrl(note.title);
-    a.className = 'note-link' + (note.title === current ? ' active' : '');
+    a.className = 'note-link';
     if (note.title === current) a.setAttribute('aria-current', 'page');
     const name = document.createElement('span');
     name.className = 'note-title';
@@ -107,7 +114,15 @@ function renderList(): void {
     time.className = 'note-time';
     time.textContent = timeAgo(note.mtime);
     a.append(name, time);
-    return a;
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'icon-button note-delete';
+    del.title = 'Delete note';
+    del.setAttribute('aria-label', `Delete ${note.title}`);
+    del.innerHTML = TRASH_ICON;
+    del.addEventListener('click', () => void deleteNote(note.title));
+    item.append(a, del);
+    return item;
   }));
   if (!notes.length) {
     const p = document.createElement('p');
@@ -154,26 +169,26 @@ function setPresence(count: number): void {
   presenceEl.title = `${count} people have this note open`;
 }
 
-let previewFrame = 0;
-function renderPreview(): void {
-  if (!previewing || previewFrame) return;
-  previewFrame = requestAnimationFrame(() => {
-    previewFrame = 0;
-    preview.innerHTML = render(binding.value);
-  });
+// The formatted live editor is the default; the raw Markdown editor is
+// there when asked for, and only until the page is reloaded.
+function setRaw(on: boolean, focus = true): void {
+  rawMode = on;
+  rawButton.setAttribute('aria-pressed', String(on));
+  rawButton.title = on ? 'Back to formatted view (Ctrl+E)' : 'Edit raw Markdown (Ctrl+E)';
+  if (on) { liveView.hide(); rawView.show(); }
+  else { rawView.hide(); liveView.show(); }
+  if (focus && session && !mobile.matches) focusEditor();
 }
 
-function setPreview(on: boolean): void {
-  previewing = on;
-  app.classList.toggle('previewing', on);
-  previewButton.setAttribute('aria-pressed', String(on));
-  previewButton.title = on ? 'Edit (Ctrl+E)' : 'Preview (Ctrl+E)';
-  previewButton.querySelector('.label')!.textContent = on ? 'Edit' : 'Preview';
-  editor.hidden = on;
-  preview.hidden = !on;
-  if (on) renderPreview();
-  else if (!mobile.matches) editor.focus();
-  store('mdpad.preview', on ? '1' : '0');
+function focusEditor(): void {
+  if (rawMode) raw.focus();
+  else liveView.focus();
+}
+
+function setEditable(on: boolean): void {
+  raw.readOnly = !on;
+  live.contentEditable = on ? 'true' : 'false';
+  app.classList.toggle('loading', !on);
 }
 
 function showEmpty(empty: boolean): void {
@@ -185,15 +200,14 @@ function openNote(title: string): void {
   if (session && session.title === title && !session.closed) return;
   if (session) session.close();
   showEmpty(false);
-  editor.readOnly = true;
+  setEditable(false);
   titleInput.value = title;
   document.title = `${title} · Mdpad`;
   setPresence(1);
-  binding.setText('');
-  const s = new NoteSession(title, conn, binding, {
+  model.reset('');
+  const s = new NoteSession(title, conn, model, {
     loaded() {
-      editor.readOnly = false;
-      renderPreview();
+      setEditable(true);
     },
     synced: () => updateStatus(),
     presence: (count) => setPresence(count),
@@ -243,7 +257,6 @@ async function createNote(): Promise<void> {
     await refreshList();
     history.pushState(null, '', noteUrl(title));
     openNote(title);
-    setPreview(false);
     // Let the user name it right away.
     titleInput.focus();
     titleInput.select();
@@ -270,26 +283,25 @@ async function renameNote(): Promise<void> {
   }
 }
 
-async function deleteNote(): Promise<void> {
-  if (!session) return;
-  const title = session.title;
+async function deleteNote(title: string): Promise<void> {
   if (!confirm(`Delete "${title}"? This removes ${title}.md from disk.`)) return;
+  const wasOpen = session?.title === title;
   // Leave the note first, so the server's "deleted" notice goes to others only.
-  session.close();
-  session = null;
+  if (wasOpen && session) {
+    session.close();
+    session = null;
+  }
   try {
     await api('DELETE', '/api/notes/' + encodeURIComponent(title));
     await refreshList();
-    openDefault();
+    if (wasOpen) openDefault();
   } catch (err) {
     showToast((err as Error).message);
-    openNote(title);
+    if (wasOpen) openNote(title);
   }
 }
 
 // ---------------------------------------------------------------- wiring
-
-binding.onChange = () => renderPreview();
 
 conn.onMessage = (msg) => {
   if (msg.type === 'notes') {
@@ -311,33 +323,24 @@ $('toggle-sidebar').addEventListener('click', () => setSidebar(!app.classList.co
 $('scrim').addEventListener('click', () => setSidebar(false, false));
 $('new-note').addEventListener('click', () => void createNote());
 $('empty-new').addEventListener('click', () => void createNote());
-$('delete-note').addEventListener('click', () => void deleteNote());
-previewButton.addEventListener('click', () => setPreview(!previewing));
+rawButton.addEventListener('click', () => setRaw(!rawMode));
 
 list.addEventListener('click', (e) => {
   // Re-selecting the open note on a phone should still close the drawer.
-  if ((e.target as HTMLElement).closest('a') && mobile.matches) setSidebar(false, false);
+  if ((e.target as HTMLElement).closest('a.note-link') && mobile.matches) setSidebar(false, false);
 });
 
 titleInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') { e.preventDefault(); editor.focus(); }
-  else if (e.key === 'Escape') { titleInput.value = session?.title ?? ''; editor.focus(); }
+  if (e.key === 'Enter') { e.preventDefault(); focusEditor(); }
+  else if (e.key === 'Escape') { titleInput.value = session?.title ?? ''; focusEditor(); }
 });
 titleInput.addEventListener('change', () => void renameNote());
-
-preview.addEventListener('click', (e) => {
-  const a = (e.target as HTMLElement).closest('a');
-  if (a && a.origin !== location.origin) {
-    a.target = '_blank';
-    a.rel = 'noopener noreferrer';
-  }
-});
 
 document.addEventListener('keydown', (e) => {
   const mod = e.ctrlKey || e.metaKey;
   if (!mod || e.altKey) return;
   const key = e.key.toLowerCase();
-  if (key === 'e' && !e.shiftKey) { e.preventDefault(); if (session) setPreview(!previewing); }
+  if (key === 'e' && !e.shiftKey) { e.preventDefault(); if (session) setRaw(!rawMode); }
   else if (key === 's') { e.preventDefault(); updateStatus(); }
   else if (key === '\\') { e.preventDefault(); setSidebar(!app.classList.contains('sidebar-open')); }
 });
@@ -353,7 +356,7 @@ setInterval(renderList, 60000); // keep the "x min ago" labels fresh
 // ---------------------------------------------------------------- start
 
 setSidebar(mobile.matches ? false : store('mdpad.sidebar') !== '0', false);
-setPreview(store('mdpad.preview') === '1');
+setRaw(false, false);
 updateStatus();
 requestAnimationFrame(() => requestAnimationFrame(() => app.classList.remove('booting')));
 conn.start();

@@ -2,7 +2,7 @@
 
 import * as OT from '../shared/ot.js';
 import type { Connection } from './connection.js';
-import type { TextBinding } from './binding.js';
+import type { EditorModel } from './model.js';
 
 export interface SessionEvents {
   loaded(): void;
@@ -27,19 +27,19 @@ export class NoteSession {
   title: string;
   readonly sub = nextSub++;
   private conn: Connection;
-  private binding: TextBinding;
+  private model: EditorModel;
   private events: SessionEvents;
   private client: OT.Client | null = null;
   private epoch: string | null = null;
   private ready = false; // the server has caught us up on this connection
   closed = false;
 
-  constructor(title: string, conn: Connection, binding: TextBinding, events: SessionEvents) {
+  constructor(title: string, conn: Connection, model: EditorModel, events: SessionEvents) {
     this.title = title;
     this.conn = conn;
-    this.binding = binding;
+    this.model = model;
     this.events = events;
-    binding.onLocalOp = (op) => this.localOp(op);
+    model.onLocalOp = (op) => this.localOp(op);
   }
 
   get loaded(): boolean {
@@ -63,7 +63,7 @@ export class NoteSession {
 
   close(): void {
     this.closed = true;
-    this.binding.onLocalOp = () => {};
+    this.model.onLocalOp = () => {};
     this.conn.send({ type: 'close' });
   }
 
@@ -96,7 +96,7 @@ export class NoteSession {
       }
       case 'op': {
         if (!this.client || !this.ready) return;
-        this.binding.applyRemote(this.client.applyServer(msg.op as OT.Op));
+        this.model.remote(this.client.applyServer(msg.op as OT.Op));
         return;
       }
       case 'presence': return this.events.presence(msg.count as number);
@@ -129,17 +129,17 @@ export class NoteSession {
       const serverChange = OT.fromDiff(old.serverText, text);
       const [mine, theirs] = OT.transform(pending, serverChange);
       this.client = new OT.Client(rev, text, old.seq);
-      this.binding.applyRemote(theirs);
+      this.model.remote(theirs);
       this.ready = true;
       const msg = this.client.applyClient(mine);
       if (msg) this.sendOp(msg);
     } else if (old) {
       this.client = new OT.Client(rev, text, old.seq);
-      this.binding.applyRemote(OT.fromDiff(this.binding.value, text));
+      this.model.remote(OT.fromDiff(this.model.value, text));
       this.ready = true;
     } else {
       this.client = new OT.Client(rev, text);
-      this.binding.setText(text);
+      this.model.reset(text);
       this.ready = true;
       this.events.loaded();
     }
@@ -154,7 +154,7 @@ export class NoteSession {
       if (entry.seq !== null && client.outstanding && entry.seq === client.outstandingSeq) {
         client.serverAck();
       } else {
-        this.binding.applyRemote(client.applyServer(entry.op));
+        this.model.remote(client.applyServer(entry.op));
       }
     }
     this.ready = true;
