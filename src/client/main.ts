@@ -177,7 +177,10 @@ function setRaw(on: boolean, focus = true): void {
   rawButton.title = on ? 'Back to formatted view (Ctrl+E)' : 'Edit raw Markdown (Ctrl+E)';
   if (on) { liveView.hide(); rawView.show(); }
   else { rawView.hide(); liveView.show(); }
-  if (focus && session && !mobile.matches) focusEditor();
+  // Coming back from raw leaves the formatted view unfocused, so the whole
+  // note shows formatted and no line reveals its Markdown until clicked.
+  if (on && focus && session && !mobile.matches) focusEditor();
+  else if (!on) raw.blur();
 }
 
 function focusEditor(): void {
