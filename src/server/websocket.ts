@@ -157,7 +157,8 @@ export class WebSocketConnection extends EventEmitter {
 }
 
 // Attaches a WebSocket endpoint at `path` to an http server and calls
-// `onConnection(ws, req)` for each new connection.
+// `onConnection(ws, req)` for each new connection whose Host header passes
+// `hostAllowed`.
 export interface WebSocketServer {
   connections: Set<WebSocketConnection>;
   close(): void;
@@ -166,6 +167,7 @@ export interface WebSocketServer {
 export function attachWebSocketServer(
   server: Server,
   path: string,
+  hostAllowed: (host: string | undefined) => boolean,
   onConnection: (ws: WebSocketConnection, req: IncomingMessage) => void
 ): WebSocketServer {
   const connections = new Set<WebSocketConnection>();
@@ -176,6 +178,10 @@ export function attachWebSocketServer(
     const upgrade = (req.headers.upgrade || '').toLowerCase();
     if (url.pathname !== path || upgrade !== 'websocket' || !key) {
       socket.end('HTTP/1.1 400 Bad Request\r\n\r\n');
+      return;
+    }
+    if (!hostAllowed(req.headers.host)) {
+      socket.end('HTTP/1.1 403 Forbidden\r\n\r\n');
       return;
     }
     // Refuse connections that a page on another site opened.

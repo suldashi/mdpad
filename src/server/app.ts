@@ -8,6 +8,7 @@ import { Store, StoreError } from './store.js';
 import { Attachments, formatSize } from './attachments.js';
 import { DocManager, type Doc, type DocOptions, type Peer } from './docs.js';
 import { attachWebSocketServer, type WebSocketConnection } from './websocket.js';
+import { hostChecker } from './hosts.js';
 
 export interface AppOptions extends DocOptions {
   notesDir: string;
@@ -15,6 +16,7 @@ export interface AppOptions extends DocOptions {
   jsDir: string;     // bundled browser code (dist/public/js)
   maxUpload?: number; // largest attachment, in bytes
   attachmentGrace?: number; // ms an attachment may go unlinked before it is deleted; 0 keeps them all
+  allowedHosts?: string[]; // host names to answer besides IP addresses and localhost; "*" for any
 }
 
 export interface App {
@@ -115,6 +117,7 @@ export function createApp(opts: AppOptions): App {
   const docs = new DocManager(store, opts);
   const publicDir = path.resolve(opts.publicDir);
   const jsDir = path.resolve(opts.jsDir);
+  const hostAllowed = hostChecker(opts.allowedHosts);
   const attachments = new Attachments(opts.notesDir, opts.maxUpload ?? 25 * 1024 * 1024, opts.attachmentGrace ?? 24 * 3600 * 1000);
 
   // Every note's text: what's on disk, and the live text of open notes,
@@ -203,6 +206,7 @@ export function createApp(opts: AppOptions): App {
   async function handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     const url = new URL(req.url || '/', 'http://localhost');
     try {
+      if (!hostAllowed(req.headers.host)) throw new HttpError(403, 'Unknown host name. Add it to ALLOWED_HOSTS to use Mdpad under it.');
       if (url.pathname === '/api/notes' || url.pathname.startsWith('/api/notes/')) {
         return await handleApi(req, res, url);
       }
@@ -240,7 +244,7 @@ export function createApp(opts: AppOptions): App {
     for (const s of sessions) s.send({ type: 'notes' });
   };
 
-  const wss = attachWebSocketServer(server, '/ws', (ws) => {
+  const wss = attachWebSocketServer(server, '/ws', hostAllowed, (ws) => {
     const session: Session = {
       ws,
       clientId: crypto.randomUUID(),

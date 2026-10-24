@@ -41,6 +41,17 @@ export function cleanTitle(input: unknown): string {
   return title;
 }
 
+// Names Windows keeps for devices, with or without an extension: a note
+// called "CON" or "nul.backup" can't be saved there. Refused for new titles
+// only, so such files made elsewhere still open.
+const RESERVED = /^(con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³]) *(\.|$)/i;
+
+export function cleanNewTitle(input: unknown): string {
+  const title = cleanTitle(input);
+  if (RESERVED.test(title)) throw new StoreError(400, `"${title}" is a reserved name on Windows`);
+  return title;
+}
+
 export class Store {
   readonly dir: string;
 
@@ -102,7 +113,7 @@ export class Store {
   }
 
   async create(input: string, text = ''): Promise<string> {
-    const title = cleanTitle(input);
+    const title = cleanNewTitle(input);
     try {
       await fsp.writeFile(this.pathFor(title), text, { encoding: 'utf8', flag: 'wx' });
     } catch (err) {
@@ -123,7 +134,7 @@ export class Store {
 
   async rename(fromInput: string, toInput: string): Promise<string> {
     const from = cleanTitle(fromInput);
-    const to = cleanTitle(toInput);
+    const to = cleanNewTitle(toInput);
     if (from === to) return to;
     // Changing only the letter case is the same file on case-insensitive disks.
     const sameFile = from.toLowerCase() === to.toLowerCase();
@@ -139,7 +150,7 @@ export class Store {
 
   // A title based on `base` that no note uses yet.
   async freeTitle(input: string): Promise<string> {
-    const base = cleanTitle(input);
+    const base = cleanNewTitle(input);
     if (!await this.exists(base)) return base;
     for (let n = 2; ; n++) {
       const title = `${base} ${n}`;
