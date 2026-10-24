@@ -3,14 +3,16 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createApp, type App } from '../src/server/app.js';
 import { cleanFileName } from '../src/server/attachments.js';
+import { hostChecker } from '../src/server/hosts.js';
 import * as OT from '../src/shared/ot.js';
 
 type Msg = Record<string, any>;
 
-async function startApp(extra: { maxUpload?: number } = {}): Promise<{ app: App; base: string; dir: string }> {
+async function startApp(extra: { maxUpload?: number; allowedHosts?: string[] } = {}): Promise<{ app: App; base: string; dir: string }> {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mdpad-test-'));
   const app = createApp({
     notesDir: dir,
@@ -140,6 +142,19 @@ test('REST API creates, lists, renames and deletes notes', async () => {
     r = await json(base, 'PATCH', '/api/notes/Groceries', { title: '../escape' });
     assert.equal(r.status, 400);
 
+    for (const title of ['CON', 'nul', 'com1.backup', 'LPT9 ']) {
+      r = await json(base, 'POST', '/api/notes', { title });
+      assert.equal(r.status, 400, title);
+      r = await json(base, 'PATCH', '/api/notes/Groceries', { title });
+      assert.equal(r.status, 400, title);
+    }
+    r = await json(base, 'POST', '/api/notes', { title: 'Con artists' });
+    assert.equal(r.status, 201);
+    // A file with such a name made elsewhere still opens and can be renamed.
+    fs.writeFileSync(path.join(dir, 'aux.md'), 'hi');
+    r = await json(base, 'PATCH', '/api/notes/aux', { title: 'Auxiliary' });
+    assert.equal(r.status, 200);
+
     r = await json(base, 'DELETE', '/api/notes/Groceries');
     assert.equal(r.status, 204);
     assert.ok(!fs.existsSync(path.join(dir, 'Groceries.md')));
@@ -170,6 +185,41 @@ test('serves the app and compiled scripts but nothing outside them', async () =>
   } finally {
     await app.close();
   }
+});
+
+// Sends a request with a chosen Host header, which fetch doesn't allow.
+function requestAs(base: string, host: string, url: string, headers: Record<string, string> = {}): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const req = http.request(base + url, { headers: { ...headers, host } }, (res) => {
+      res.resume();
+      resolve(res.statusCode!);
+    });
+    req.on('upgrade', (res, socket) => { socket.destroy(); resolve(res.statusCode!); });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+test('only answers IP addresses, localhost and allowed host names', async () => {
+  const { app, base } = await startApp({ allowedHosts: ['notes.example.com'] });
+  const port = new URL(base).port;
+  const upgrade = { connection: 'Upgrade', upgrade: 'websocket', 'sec-websocket-version': '13', 'sec-websocket-key': 'dGhlIHNhbXBsZSBub25jZQ==' };
+  try {
+    for (const host of [`127.0.0.1:${port}`, `[::1]:${port}`, `localhost:${port}`, `notes.example.com`, `NOTES.example.com:${port}`]) {
+      assert.equal(await requestAs(base, host, '/api/notes'), 200, host);
+      assert.equal(await requestAs(base, host, '/ws', upgrade), 101, host);
+    }
+    // A site that points its own name at this server (DNS rebinding).
+    for (const host of [`attacker.example:${port}`, 'example.com', 'notes.example.com.evil']) {
+      assert.equal(await requestAs(base, host, '/api/notes'), 403, host);
+      assert.equal(await requestAs(base, host, '/', {}), 403, host);
+      assert.equal(await requestAs(base, host, '/ws', { ...upgrade, origin: `http://${host}` }), 403, host);
+    }
+  } finally {
+    await app.close();
+  }
+  assert.ok(hostChecker(['*'])('anything.example'));
+  assert.ok(!hostChecker()('a@b'));
 });
 
 test('two clients edit the same note concurrently and the file is saved', async () => {
