@@ -32,6 +32,7 @@ Set these as environment variables:
 |-------------|-------------|------------------------------------------------------------------------------|
 | `PORT`      | `3000`      | Port to listen on.                                                           |
 | `HOST`      | `127.0.0.1` | Address to listen on. Use `0.0.0.0` to reach it from other devices, such as your phone on the same network. |
+| `ALLOWED_HOSTS` | | Comma-separated host names Mdpad may be reached under, such as `notes.example.com,mybox.local`. IP addresses, `localhost` and `HOST` always work. Other names are refused, so a website can't point its own domain at your server (DNS rebinding) and read your notes. `*` allows any name. |
 | `NOTES_DIR` | `notes`     | Folder for the `.md` files, relative to the project folder or absolute.     |
 | `MAX_UPLOAD_MB` | `25`    | Largest file that can be attached to a note, in megabytes.                   |
 | `ATTACHMENT_GRACE_HOURS` | `24` | How long an attached file may go unlinked before it is deleted. `0` never deletes attachments. |
@@ -40,7 +41,7 @@ For example: `HOST=0.0.0.0 PORT=8080 NOTES_DIR=/srv/notes npm start`
 
 ### Behind a reverse proxy
 
-The proxy has to pass WebSocket upgrades through for `/ws`, and keep the `Host` header (or send `X-Forwarded-Host`), because the server refuses WebSocket connections opened from another site. With nginx:
+The proxy has to pass WebSocket upgrades through for `/ws`, and keep the `Host` header (or send `X-Forwarded-Host`), because the server refuses WebSocket connections opened from another site. Add the proxy's host name to `ALLOWED_HOSTS` (for example `ALLOWED_HOSTS=notes.example.com`), or the server answers 403. With nginx:
 
 ```nginx
 location / {
@@ -55,7 +56,7 @@ location / {
 
 ## Using it
 
-- **Title:** the large field above the text. Changing it renames the `.md` file (press Enter or click away to apply). Titles can't contain `/ \ < > : " | ? *`.
+- **Title:** the large field above the text. Changing it renames the `.md` file (press Enter or click away to apply). Titles can't contain `/ \ < > : " | ? *`, and can't be names Windows reserves for devices, like `CON` or `NUL`.
 - **Notes list:** the ☰ button (or Ctrl+\\) shows and hides it. On a phone it slides over the editor. **New note** is at the top of the list, and each note has a delete button (shown on hover, and always on the open note).
 - **Formatted editing (the default):** type as usual. Markdown turns into formatting as you type it: `# ` makes a heading, `**bold**` makes bold text, `- ` or `1. ` starts a list, `> ` a quote, and three backticks a code block. Ctrl+B and Ctrl+I make text bold or italic. Click left of a task to tick it. Ctrl/Cmd-click opens a link.
 - **Your file keeps its style.** Edits are written back to the `.md` file touching only what you changed, so the rest keeps its formatting (for example `*` bullets or `__bold__`). A line you edit may be rewritten in the editor's style, and when keeping the old style would change the meaning, the editor's version is used.
